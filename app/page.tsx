@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Gift, Receipt, Split, Users } from "lucide-react";
+import { Copy, Gift, Receipt, Send, Split, Users } from "lucide-react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { WalletPanel } from "@/components/WalletPanel";
@@ -10,7 +10,9 @@ import { ZERO_ADDRESS } from "@/lib/contracts";
 const LOCAL_BILL_KEY = "basesplit.club.localBill";
 const LOCAL_POINTS_KEY = "basesplit.club.rewardPoints";
 const LOCAL_RECEIPTS_KEY = "basesplit.club.receipts";
-const GUEST_WALLET = "guest-wallet";
+const LOCAL_BALANCES_KEY = "basesplit.club.balances";
+const LOCAL_TRANSFERS_KEY = "basesplit.club.transfers";
+const GUEST_WALLET = "guest";
 
 type FormParticipant = {
   address: string;
@@ -31,6 +33,15 @@ type LocalBill = {
   receiptMinted: boolean;
 };
 
+type TransferRecord = {
+  id: string;
+  from: string;
+  to: string;
+  amount: string;
+  note: string;
+  createdAt: string;
+};
+
 function formatShare(value?: bigint) {
   if (value === undefined) return "0.00";
   return Number(formatUnits(value, 6)).toLocaleString("en-US", {
@@ -39,9 +50,19 @@ function formatShare(value?: bigint) {
   });
 }
 
+function parseAppAmount(value: string) {
+  return parseUnits(value || "0", 6);
+}
+
+function normalizeUserId(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return isAddress(trimmed) ? trimmed.toLowerCase() : trimmed.toLowerCase().replace(/\s+/g, "-");
+}
+
 function compactAddress(address?: string) {
   if (!address) return "Not connected";
-  if (!address.startsWith("0x")) return "Guest";
+  if (!address.startsWith("0x")) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
@@ -50,16 +71,16 @@ function readStoredNumber(key: string) {
   return Number(window.localStorage.getItem(key) || "0");
 }
 
-function parseStoredBill() {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(LOCAL_BILL_KEY);
-  if (!raw) return null;
+function readJson<T>(key: string, fallback: T) {
+  if (typeof window === "undefined") return fallback;
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return fallback;
 
   try {
-    return JSON.parse(raw) as LocalBill;
+    return JSON.parse(raw) as T;
   } catch {
-    window.localStorage.removeItem(LOCAL_BILL_KEY);
-    return null;
+    window.localStorage.removeItem(key);
+    return fallback;
   }
 }
 
@@ -71,8 +92,8 @@ function sumParticipants(participants: LocalParticipant[], paidOnly = false) {
 }
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
-  const walletId = (address || GUEST_WALLET).toLowerCase();
+  const { address } = useAccount();
+  const walletId = normalizeUserId(address || GUEST_WALLET);
   const [status, setStatus] = useState("");
   const [title, setTitle] = useState("Weekend dinner in SoHo");
   const [participants, setParticipants] = useState<FormParticipant[]>([
@@ -82,12 +103,25 @@ export default function Home() {
   const [localBill, setLocalBill] = useState<LocalBill | null>(null);
   const [rewardPoints, setRewardPoints] = useState(0);
   const [receiptBalance, setReceiptBalance] = useState(0);
+  const [balances, setBalances] = useState<Record<string, string>>({});
+  const [transfers, setTransfers] = useState<TransferRecord[]>([]);
+  const [transferTo, setTransferTo] = useState(GUEST_WALLET);
+  const [transferAmount, setTransferAmount] = useState("25.00");
+  const [transferNote, setTransferNote] = useState("Add app balance");
 
   useEffect(() => {
-    setLocalBill(parseStoredBill());
+    setLocalBill(readJson<LocalBill | null>(LOCAL_BILL_KEY, null));
     setRewardPoints(readStoredNumber(LOCAL_POINTS_KEY));
     setReceiptBalance(readStoredNumber(LOCAL_RECEIPTS_KEY));
+    setBalances(readJson<Record<string, string>>(LOCAL_BALANCES_KEY, {}));
+    setTransfers(readJson<TransferRecord[]>(LOCAL_TRANSFERS_KEY, []));
   }, []);
+
+  useEffect(() => {
+    if (address) {
+      setTransferTo(address);
+    }
+  }, [address]);
 
   const referrer = useMemo(() => {
     if (typeof window === "undefined") return ZERO_ADDRESS;
@@ -97,17 +131,15 @@ export default function Home() {
 
   const myParticipant = useMemo(() => {
     if (!localBill) return undefined;
-    if (address) {
-      return localBill.participants.find((participant) => participant.address.toLowerCase() === walletId);
-    }
-    return localBill.participants.find((participant) => !participant.paid);
-  }, [address, localBill, walletId]);
+    return localBill.participants.find((participant) => participant.address === walletId);
+  }, [localBill, walletId]);
 
   const currentTitle = localBill?.title || title;
   const activeBillId = localBill?.id || "draft";
   const paidAmount = localBill ? sumParticipants(localBill.participants, true) : 0n;
   const totalAmount = localBill ? sumParticipants(localBill.participants) : 0n;
   const myShare = myParticipant ? BigInt(myParticipant.amount) : 0n;
+  const myBalance = BigInt(balances[walletId] || "0");
   const hasPaid = Boolean(myParticipant?.paid);
   const isSettled = Boolean(localBill && localBill.participants.every((participant) => participant.paid));
   const canMint = Boolean(localBill && isSettled && !localBill.receiptMinted);
@@ -139,58 +171,84 @@ export default function Home() {
     }
   }
 
+  function persistBalances(nextBalances: Record<string, string>) {
+    setBalances(nextBalances);
+    window.localStorage.setItem(LOCAL_BALANCES_KEY, JSON.stringify(nextBalances));
+  }
+
+  function persistTransfers(nextTransfers: TransferRecord[]) {
+    setTransfers(nextTransfers);
+    window.localStorage.setItem(LOCAL_TRANSFERS_KEY, JSON.stringify(nextTransfers));
+  }
+
   function addPoints(points: number) {
     const nextPoints = rewardPoints + points;
     setRewardPoints(nextPoints);
     window.localStorage.setItem(LOCAL_POINTS_KEY, String(nextPoints));
   }
 
-  function handleCreateBill() {
-    const validRows = participants.filter((row) => isAddress(row.address) && Number(row.amount) > 0);
-    const fallbackRows = isConnected && address && participants.every((row) => !row.address)
-      ? [{ address, amount: "1.00" }]
-      : [];
-    const rows = validRows.length > 0 ? validRows : fallbackRows;
+  function recordTransfer(from: string, to: string, amount: bigint, note: string) {
+    const nextTransfers = [
+      {
+        id: Date.now().toString(),
+        from,
+        to,
+        amount: amount.toString(),
+        note,
+        createdAt: new Date().toISOString()
+      },
+      ...transfers
+    ].slice(0, 8);
+    persistTransfers(nextTransfers);
+  }
 
-    if (rows.length === 0) {
-      setStatus("Add at least one participant address, or connect a wallet to create a personal split.");
-      return;
-    }
+  function handleCreateBill() {
+    const validRows = participants.filter((row) => normalizeUserId(row.address) && Number(row.amount) > 0);
+    const rows = validRows.length > 0 ? validRows : [{ address: walletId, amount: "1.00" }];
 
     const nextBill: LocalBill = {
       id: Date.now().toString(),
       title,
-      creator: address || GUEST_WALLET,
+      creator: walletId,
       participants: rows.map((row) => ({
-        address: row.address.toLowerCase(),
-        amount: parseUnits(row.amount, 6).toString(),
+        address: normalizeUserId(row.address),
+        amount: parseAppAmount(row.amount).toString(),
         paid: false
       })),
       receiptMinted: false
     };
 
     persistBill(nextBill);
-    setStatus("Split saved. No token or gas required.");
+    setStatus("Split saved. Add app balance before paying.");
   }
 
   function handlePayShare() {
     if (!localBill || !myParticipant) {
-      setStatus("Open a split that includes your wallet address.");
+      setStatus("Open a split that includes your wallet, address, or nickname.");
+      return;
+    }
+
+    if (myBalance < myShare) {
+      setStatus("Add app balance first. Wallet balance is required before paying.");
       return;
     }
 
     const nextBill = {
       ...localBill,
       participants: localBill.participants.map((participant) =>
-        participant.address.toLowerCase() === myParticipant.address.toLowerCase()
-          ? { ...participant, paid: true }
-          : participant
+        participant.address === myParticipant.address ? { ...participant, paid: true } : participant
       )
+    };
+    const nextBalances = {
+      ...balances,
+      [walletId]: (myBalance - myShare).toString()
     };
 
     persistBill(nextBill);
+    persistBalances(nextBalances);
+    recordTransfer(walletId, localBill.creator, myShare, `Paid share for ${localBill.title}`);
     addPoints(referrer !== ZERO_ADDRESS ? 15 : 5);
-    setStatus("Share confirmed locally. No wallet balance needed.");
+    setStatus("Share paid from app balance and recorded.");
   }
 
   function handleMintReceipt() {
@@ -203,6 +261,26 @@ export default function Home() {
     window.localStorage.setItem(LOCAL_RECEIPTS_KEY, String(nextReceipts));
     addPoints(15);
     setStatus("Receipt added to your local collection.");
+  }
+
+  function handleTransfer() {
+    const to = normalizeUserId(transferTo);
+    const amount = parseAppAmount(transferAmount);
+
+    if (!to || amount <= 0n) {
+      setStatus("Enter a recipient and transfer amount.");
+      return;
+    }
+
+    const currentRecipientBalance = BigInt(balances[to] || "0");
+    const nextBalances = {
+      ...balances,
+      [to]: (currentRecipientBalance + amount).toString()
+    };
+
+    persistBalances(nextBalances);
+    recordTransfer(walletId, to, amount, transferNote || "App balance transfer");
+    setStatus(to === walletId ? "Self transfer recorded and balance added." : "Transfer recorded.");
   }
 
   function handlePrimaryAction() {
@@ -232,11 +310,12 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <Metric label="App balance" value={formatShare(myBalance)} />
             <Metric label="My share" value={formatShare(myShare)} />
             <Metric label="Bill status" value={billStatus} />
-            <Metric label="Total confirmed" value={`${formatShare(paidAmount)} / ${formatShare(totalAmount)}`} />
-            <Metric label="Reward points" value={rewardPoints.toString()} />
+            <Metric label="Confirmed" value={`${formatShare(paidAmount)} / ${formatShare(totalAmount)}`} />
+            <Metric label="Points" value={rewardPoints.toString()} />
           </div>
 
           <button
@@ -295,14 +374,14 @@ export default function Home() {
             {participants.map((row, index) => (
               <div key={index} className="grid grid-cols-[1fr_5.5rem] gap-2">
                 <input
-                  aria-label={`Participant ${index + 1} address`}
+                  aria-label={`Participant ${index + 1}`}
                   value={row.address}
                   onChange={(event) => {
                     const next = [...participants];
                     next[index] = { ...row, address: event.target.value };
                     setParticipants(next);
                   }}
-                  placeholder="0x participant"
+                  placeholder="address or nickname"
                   className="h-11 min-w-0 rounded-lg border border-line bg-ink px-3 text-sm text-white placeholder:text-white/25"
                 />
                 <input
@@ -331,6 +410,56 @@ export default function Home() {
         <div className="grid gap-4">
           <div className="rounded-lg border border-line bg-panel/70 p-4">
             <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white">Transfer</h2>
+              <Send className="h-5 w-5 text-mint" />
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_7rem]">
+              <input
+                aria-label="Transfer recipient"
+                value={transferTo}
+                onChange={(event) => setTransferTo(event.target.value)}
+                placeholder="address or nickname"
+                className="h-11 min-w-0 rounded-lg border border-line bg-ink px-3 text-sm text-white placeholder:text-white/25"
+              />
+              <input
+                aria-label="Transfer amount"
+                value={transferAmount}
+                onChange={(event) => setTransferAmount(event.target.value)}
+                className="h-11 rounded-lg border border-line bg-ink px-3 text-sm text-white"
+                inputMode="decimal"
+              />
+            </div>
+            <input
+              aria-label="Transfer note"
+              value={transferNote}
+              onChange={(event) => setTransferNote(event.target.value)}
+              className="mt-2 h-11 w-full rounded-lg border border-line bg-ink px-3 text-sm text-white"
+            />
+            <button
+              type="button"
+              onClick={handleTransfer}
+              className="mt-3 h-10 rounded-lg border border-line px-3 text-sm font-semibold text-white/75 transition hover:bg-white/8"
+            >
+              Record Transfer
+            </button>
+            <div className="mt-3 grid gap-2">
+              {transfers.length === 0 ? (
+                <p className="rounded-lg border border-line bg-ink p-3 text-sm text-white/45">No transfers yet.</p>
+              ) : (
+                transfers.slice(0, 3).map((transfer) => (
+                  <div key={transfer.id} className="rounded-lg border border-line bg-ink p-3 text-sm text-white/60">
+                    <p className="font-semibold text-white">{formatShare(BigInt(transfer.amount))}</p>
+                    <p className="break-all text-xs text-white/45">
+                      {compactAddress(transfer.from)} to {compactAddress(transfer.to)}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-line bg-panel/70 p-4">
+            <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-white">Invite</h2>
               <button
                 type="button"
@@ -356,7 +485,7 @@ export default function Home() {
             <div className="mt-3 grid grid-cols-2 gap-3">
               <Metric label="Receipt" value={receiptMinted ? "Minted" : canMint ? "Ready" : "Pending"} />
               <Metric label="Owned" value={receiptBalance.toString()} />
-              <Metric label="Wallet" value={compactAddress(address)} />
+              <Metric label="Wallet" value={compactAddress(address || GUEST_WALLET)} />
             </div>
           </div>
         </div>

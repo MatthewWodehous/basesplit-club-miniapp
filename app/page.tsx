@@ -242,16 +242,20 @@ export default function Home() {
         participant.address === myParticipant.address ? { ...participant, paid: true } : participant
       )
     };
-    const nextBalances = {
-      ...balances,
-      [walletId]: (myBalance - myShare).toString()
-    };
+    const isSelfPayment = localBill.creator === walletId;
+    const nextBalances = isSelfPayment
+      ? balances
+      : {
+          ...balances,
+          [walletId]: (myBalance - myShare).toString(),
+          [localBill.creator]: (BigInt(balances[localBill.creator] || "0") + myShare).toString()
+        };
 
     persistBill(nextBill);
     persistBalances(nextBalances);
     recordTransfer(walletId, localBill.creator, myShare, `Paid share for ${localBill.title}`);
     addPoints(referrer !== ZERO_ADDRESS ? 15 : 5);
-    setStatus("Share paid from app balance and recorded.");
+    setStatus(isSelfPayment ? "Self payment recorded. Balance unchanged." : "Share paid from app balance and recorded.");
   }
 
   function handleAddRequiredBalance() {
@@ -525,7 +529,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-h-20 rounded-lg border border-line bg-ink p-3">
       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-white/40">{label}</p>
-      <p className="mt-2 break-words text-lg font-black text-white">{value}</p>
+      <p className="mt-2 whitespace-nowrap text-base font-black text-white sm:text-lg">{value}</p>
     </div>
   );
 }

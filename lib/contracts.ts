@@ -3,10 +3,7 @@ import type { Address } from "viem";
 export const baseSplitClubAbi = [
   {
     type: "constructor",
-    inputs: [
-      { name: "usdcAddress", type: "address", internalType: "address" },
-      { name: "initialBaseURI", type: "string", internalType: "string" }
-    ],
+    inputs: [{ name: "initialBaseURI", type: "string", internalType: "string" }],
     stateMutability: "nonpayable"
   },
   {
@@ -180,29 +177,5 @@ export const baseSplitClubAbi = [
   }
 ] as const;
 
-export const erc20Abi = [
-  {
-    type: "function",
-    name: "allowance",
-    stateMutability: "view",
-    inputs: [
-      { name: "owner", type: "address" },
-      { name: "spender", type: "address" }
-    ],
-    outputs: [{ name: "", type: "uint256" }]
-  },
-  {
-    type: "function",
-    name: "approve",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" }
-    ],
-    outputs: [{ name: "", type: "bool" }]
-  }
-] as const;
-
 export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000") as Address;
-export const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS || "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") as Address;
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;

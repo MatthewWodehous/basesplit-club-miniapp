@@ -2,14 +2,10 @@
 pragma solidity ^0.8.24;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract BaseSplitClub is ERC721, Ownable, ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
     struct Bill {
         address creator;
         string title;
@@ -18,7 +14,6 @@ contract BaseSplitClub is ERC721, Ownable, ReentrancyGuard {
         bool receiptMinted;
     }
 
-    IERC20 public immutable usdc;
     uint256 public nextBillId;
     uint256 private nextTokenId;
     string private baseTokenURI;
@@ -39,9 +34,7 @@ contract BaseSplitClub is ERC721, Ownable, ReentrancyGuard {
     event ReceiptMinted(uint256 indexed billId, uint256 indexed tokenId, address indexed collector);
     event BaseURISet(string newBaseURI);
 
-    constructor(address usdcAddress, string memory initialBaseURI) ERC721("BaseSplit Club Receipt", "BSPLIT") Ownable(msg.sender) {
-        require(usdcAddress != address(0), "USDC address required");
-        usdc = IERC20(usdcAddress);
+    constructor(string memory initialBaseURI) ERC721("BaseSplit Club Receipt", "BSPLIT") Ownable(msg.sender) {
         baseTokenURI = initialBaseURI;
         nextTokenId = 1;
     }
@@ -102,8 +95,6 @@ contract BaseSplitClub is ERC721, Ownable, ReentrancyGuard {
         bill.paidAmount += amount;
         walletPaymentCount[msg.sender] += 1;
         rewardPoints[msg.sender] += 5;
-
-        usdc.safeTransferFrom(msg.sender, bill.creator, amount);
 
         emit SharePaid(billId, msg.sender, amount, effectiveReferrer);
     }

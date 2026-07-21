@@ -13,7 +13,7 @@ import {
   useWriteContract
 } from "wagmi";
 import { WalletPanel } from "@/components/WalletPanel";
-import { baseSplitClubAbi, CONTRACT_ADDRESS, erc20Abi, USDC_ADDRESS, ZERO_ADDRESS } from "@/lib/contracts";
+import { baseSplitClubAbi, CONTRACT_ADDRESS, ZERO_ADDRESS } from "@/lib/contracts";
 import { dataSuffix, isConfiguredAddress } from "@/lib/wagmi";
 
 const demoBillId = 0n;
@@ -23,7 +23,7 @@ type FormParticipant = {
   amount: string;
 };
 
-function formatUsdc(value?: bigint) {
+function formatShare(value?: bigint) {
   if (value === undefined) return "0.00";
   return Number(formatUnits(value, 6)).toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -221,19 +221,6 @@ export default function Home() {
     if (!address || myShare === 0n) return;
     await ensureBase();
 
-    const allowance = await fetchAllowance(address);
-    if (allowance < myShare) {
-      const approveHash = await writeContractAsync({
-        address: USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [CONTRACT_ADDRESS, myShare],
-        dataSuffix
-      });
-      await trackTransaction(approveHash, "USDC approval submitted. Confirm payment after approval lands.");
-      return;
-    }
-
     const hash = await writeContractAsync({
       address: CONTRACT_ADDRESS,
       abi: baseSplitClubAbi,
@@ -241,18 +228,7 @@ export default function Home() {
       args: [activeBillId, referrer],
       dataSuffix
     });
-    await trackTransaction(hash, "Payment submitted. Waiting for confirmation.");
-  }
-
-  async function fetchAllowance(owner: Address) {
-    const { readContract } = await import("@wagmi/core");
-    const { wagmiConfig } = await import("@/lib/wagmi");
-    return readContract(wagmiConfig, {
-      address: USDC_ADDRESS,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [owner, CONTRACT_ADDRESS]
-    });
+    await trackTransaction(hash, "Share confirmed onchain. Waiting for confirmation.");
   }
 
   async function handleMintReceipt() {
@@ -303,9 +279,9 @@ export default function Home() {
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="My share" value={`$${formatUsdc(myShare)}`} />
+            <Metric label="My share" value={formatShare(myShare)} />
             <Metric label="Bill status" value={billStatus} />
-            <Metric label="Total paid" value={`$${formatUsdc(paidAmount)}`} />
+            <Metric label="Total confirmed" value={formatShare(paidAmount)} />
             <Metric label="Reward points" value={rewardPoints.toString()} />
           </div>
 

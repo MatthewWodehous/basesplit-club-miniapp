@@ -1,26 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, Gift, Receipt, Split, Users } from "lucide-react";
-import { formatUnits, isAddress, parseEventLogs, parseUnits, type Address } from "viem";
-import { base } from "wagmi/chains";
-import {
-  useAccount,
-  useChainId,
-  useReadContract,
-  useSwitchChain,
-  useWaitForTransactionReceipt,
-  useWriteContract
-} from "wagmi";
+import { formatUnits, isAddress, parseUnits, type Address } from "viem";
+import { useAccount } from "wagmi";
 import { WalletPanel } from "@/components/WalletPanel";
-import { baseSplitClubAbi, CONTRACT_ADDRESS, ZERO_ADDRESS } from "@/lib/contracts";
-import { dataSuffix, isConfiguredAddress } from "@/lib/wagmi";
+import { ZERO_ADDRESS } from "@/lib/contracts";
 
-const demoBillId = 0n;
+const LOCAL_BILL_KEY = "basesplit.club.localBill";
+const LOCAL_POINTS_KEY = "basesplit.club.rewardPoints";
+const LOCAL_RECEIPTS_KEY = "basesplit.club.receipts";
+const GUEST_WALLET = "guest-wallet";
 
 type FormParticipant = {
   address: string;
   amount: string;
+};
+
+type LocalParticipant = {
+  address: string;
+  amount: string;
+  paid: boolean;
+};
+
+type LocalBill = {
+  id: string;
+  title: string;
+  creator: string;
+  participants: LocalParticipant[];
+  receiptMinted: boolean;
 };
 
 function formatShare(value?: bigint) {
@@ -33,23 +41,53 @@ function formatShare(value?: bigint) {
 
 function compactAddress(address?: string) {
   if (!address) return "Not connected";
+  if (!address.startsWith("0x")) return "Guest";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function readStoredNumber(key: string) {
+  if (typeof window === "undefined") return 0;
+  return Number(window.localStorage.getItem(key) || "0");
+}
+
+function parseStoredBill() {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(LOCAL_BILL_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as LocalBill;
+  } catch {
+    window.localStorage.removeItem(LOCAL_BILL_KEY);
+    return null;
+  }
+}
+
+function sumParticipants(participants: LocalParticipant[], paidOnly = false) {
+  return participants.reduce((total, participant) => {
+    if (paidOnly && !participant.paid) return total;
+    return total + BigInt(participant.amount);
+  }, 0n);
 }
 
 export default function Home() {
   const { address, isConnected } = useAccount();
-  const currentChainId = useChainId();
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
-  const [activeBillId, setActiveBillId] = useState<bigint>(demoBillId);
+  const walletId = (address || GUEST_WALLET).toLowerCase();
   const [status, setStatus] = useState("");
   const [title, setTitle] = useState("Weekend dinner in SoHo");
   const [participants, setParticipants] = useState<FormParticipant[]>([
     { address: "", amount: "18.50" },
     { address: "", amount: "18.50" }
   ]);
+  const [localBill, setLocalBill] = useState<LocalBill | null>(null);
+  const [rewardPoints, setRewardPoints] = useState(0);
+  const [receiptBalance, setReceiptBalance] = useState(0);
 
-  const appReady = isConfiguredAddress(CONTRACT_ADDRESS);
+  useEffect(() => {
+    setLocalBill(parseStoredBill());
+    setRewardPoints(readStoredNumber(LOCAL_POINTS_KEY));
+    setReceiptBalance(readStoredNumber(LOCAL_RECEIPTS_KEY));
+  }, []);
 
   const referrer = useMemo(() => {
     if (typeof window === "undefined") return ZERO_ADDRESS;
@@ -57,94 +95,23 @@ export default function Home() {
     return value && isAddress(value) ? (value as Address) : ZERO_ADDRESS;
   }, []);
 
-  const billRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "bills",
-    args: [activeBillId],
-    query: { enabled: appReady }
-  });
-
-  const myShareRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "amountDue",
-    args: [activeBillId, (address || ZERO_ADDRESS) as Address],
-    query: { enabled: appReady && Boolean(address) }
-  });
-
-  const paidRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "paid",
-    args: [activeBillId, (address || ZERO_ADDRESS) as Address],
-    query: { enabled: appReady && Boolean(address) }
-  });
-
-  const settledRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "billSettled",
-    args: [activeBillId],
-    query: { enabled: appReady }
-  });
-
-  const pointsRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "rewardPoints",
-    args: [(address || ZERO_ADDRESS) as Address],
-    query: { enabled: appReady && Boolean(address) }
-  });
-
-  const receiptBalanceRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "balanceOf",
-    args: [(address || ZERO_ADDRESS) as Address],
-    query: { enabled: appReady && Boolean(address) }
-  });
-
-  const canMintRead = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: baseSplitClubAbi,
-    functionName: "canMintReceipt",
-    args: [activeBillId, (address || ZERO_ADDRESS) as Address],
-    query: { enabled: appReady && Boolean(address) }
-  });
-
-  const refreshReads = useCallback(async () => {
-    await Promise.all([
-      billRead.refetch(),
-      myShareRead.refetch(),
-      paidRead.refetch(),
-      settledRead.refetch(),
-      pointsRead.refetch(),
-      receiptBalanceRead.refetch(),
-      canMintRead.refetch()
-    ]);
-  }, [billRead, canMintRead, myShareRead, paidRead, pointsRead, receiptBalanceRead, settledRead]);
-
-  const [lastHash, setLastHash] = useState<`0x${string}` | undefined>();
-  const txReceipt = useWaitForTransactionReceipt({ hash: lastHash });
-
-  useEffect(() => {
-    if (txReceipt.isSuccess) {
-      void refreshReads();
-      setStatus("Transaction confirmed.");
+  const myParticipant = useMemo(() => {
+    if (!localBill) return undefined;
+    if (address) {
+      return localBill.participants.find((participant) => participant.address.toLowerCase() === walletId);
     }
-  }, [refreshReads, txReceipt.isSuccess]);
+    return localBill.participants.find((participant) => !participant.paid);
+  }, [address, localBill, walletId]);
 
-  const bill = billRead.data;
-  const currentTitle = bill?.[1] || title;
-  const paidAmount = bill?.[3] || 0n;
-  const receiptMinted = bill?.[4] || false;
-  const myShare = myShareRead.data || 0n;
-  const hasPaid = Boolean(paidRead.data);
-  const isSettled = Boolean(settledRead.data);
-  const canMint = Boolean(canMintRead.data);
-  const rewardPoints = pointsRead.data || 0n;
-  const receiptBalance = receiptBalanceRead.data || 0n;
+  const currentTitle = localBill?.title || title;
+  const activeBillId = localBill?.id || "draft";
+  const paidAmount = localBill ? sumParticipants(localBill.participants, true) : 0n;
+  const totalAmount = localBill ? sumParticipants(localBill.participants) : 0n;
+  const myShare = myParticipant ? BigInt(myParticipant.amount) : 0n;
+  const hasPaid = Boolean(myParticipant?.paid);
+  const isSettled = Boolean(localBill && localBill.participants.every((participant) => participant.paid));
+  const canMint = Boolean(localBill && isSettled && !localBill.receiptMinted);
+  const receiptMinted = Boolean(localBill?.receiptMinted);
 
   const referralLink = useMemo(() => {
     if (typeof window === "undefined" || !address) return "";
@@ -153,111 +120,98 @@ export default function Home() {
     return url.toString();
   }, [address]);
 
-  const billStatus = isSettled ? "Settled" : paidAmount > 0n ? "Collecting" : appReady ? "Open" : "Setup needed";
+  const billStatus = !localBill ? "Ready" : isSettled ? "Settled" : paidAmount > 0n ? "Collecting" : "Open";
 
-  const primaryLabel = !isConnected
-    ? "Connect Wallet"
-    : !appReady
-      ? "Add Contract Address"
-      : canMint
-        ? "Mint Receipt"
-        : myShare > 0n && !hasPaid
-          ? "Pay My Share"
-          : hasPaid
-            ? "Paid"
-            : "Create Split";
+  const primaryLabel = canMint
+    ? "Mint Receipt"
+    : myShare > 0n && !hasPaid
+      ? "Pay My Share"
+      : hasPaid
+        ? "Paid"
+        : "Create Split";
 
-  async function ensureBase() {
-    if (currentChainId !== base.id) {
-      await switchChainAsync({ chainId: base.id });
+  function persistBill(nextBill: LocalBill | null) {
+    setLocalBill(nextBill);
+    if (nextBill) {
+      window.localStorage.setItem(LOCAL_BILL_KEY, JSON.stringify(nextBill));
+    } else {
+      window.localStorage.removeItem(LOCAL_BILL_KEY);
     }
   }
 
-  async function trackTransaction(hash: `0x${string}`, message: string) {
-    setLastHash(hash);
-    setStatus(message);
-    return hash;
+  function addPoints(points: number) {
+    const nextPoints = rewardPoints + points;
+    setRewardPoints(nextPoints);
+    window.localStorage.setItem(LOCAL_POINTS_KEY, String(nextPoints));
   }
 
-  async function handleCreateBill() {
-    if (!address) return;
-    await ensureBase();
-
+  function handleCreateBill() {
     const validRows = participants.filter((row) => isAddress(row.address) && Number(row.amount) > 0);
-    if (validRows.length === 0) {
-      setStatus("Add at least one participant with a valid address and amount.");
+    const fallbackRows = isConnected && address && participants.every((row) => !row.address)
+      ? [{ address, amount: "1.00" }]
+      : [];
+    const rows = validRows.length > 0 ? validRows : fallbackRows;
+
+    if (rows.length === 0) {
+      setStatus("Add at least one participant address, or connect a wallet to create a personal split.");
       return;
     }
 
-    const hash = await writeContractAsync({
-      address: CONTRACT_ADDRESS,
-      abi: baseSplitClubAbi,
-      functionName: "createBill",
-      args: [
-        title,
-        validRows.map((row) => row.address as Address),
-        validRows.map((row) => parseUnits(row.amount, 6))
-      ],
-      dataSuffix
-    });
-    await trackTransaction(hash, "Split submitted. Waiting for confirmation.");
+    const nextBill: LocalBill = {
+      id: Date.now().toString(),
+      title,
+      creator: address || GUEST_WALLET,
+      participants: rows.map((row) => ({
+        address: row.address.toLowerCase(),
+        amount: parseUnits(row.amount, 6).toString(),
+        paid: false
+      })),
+      receiptMinted: false
+    };
 
-    const { waitForTransactionReceipt } = await import("@wagmi/core");
-    const { wagmiConfig } = await import("@/lib/wagmi");
-    const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
-    const logs = parseEventLogs({
-      abi: baseSplitClubAbi,
-      logs: receipt.logs,
-      eventName: "BillCreated"
-    });
-    const createdBillId = logs[0]?.args.billId;
-    if (createdBillId !== undefined) {
-      setActiveBillId(createdBillId);
+    persistBill(nextBill);
+    setStatus("Split saved. No token or gas required.");
+  }
+
+  function handlePayShare() {
+    if (!localBill || !myParticipant) {
+      setStatus("Open a split that includes your wallet address.");
+      return;
     }
-    await refreshReads();
+
+    const nextBill = {
+      ...localBill,
+      participants: localBill.participants.map((participant) =>
+        participant.address.toLowerCase() === myParticipant.address.toLowerCase()
+          ? { ...participant, paid: true }
+          : participant
+      )
+    };
+
+    persistBill(nextBill);
+    addPoints(referrer !== ZERO_ADDRESS ? 15 : 5);
+    setStatus("Share confirmed locally. No wallet balance needed.");
   }
 
-  async function handlePayShare() {
-    if (!address || myShare === 0n) return;
-    await ensureBase();
+  function handleMintReceipt() {
+    if (!localBill || !canMint) return;
+    const nextBill = { ...localBill, receiptMinted: true };
+    const nextReceipts = receiptBalance + 1;
 
-    const hash = await writeContractAsync({
-      address: CONTRACT_ADDRESS,
-      abi: baseSplitClubAbi,
-      functionName: "payShare",
-      args: [activeBillId, referrer],
-      dataSuffix
-    });
-    await trackTransaction(hash, "Share confirmed onchain. Waiting for confirmation.");
+    persistBill(nextBill);
+    setReceiptBalance(nextReceipts);
+    window.localStorage.setItem(LOCAL_RECEIPTS_KEY, String(nextReceipts));
+    addPoints(15);
+    setStatus("Receipt added to your local collection.");
   }
 
-  async function handleMintReceipt() {
-    await ensureBase();
-    const hash = await writeContractAsync({
-      address: CONTRACT_ADDRESS,
-      abi: baseSplitClubAbi,
-      functionName: "mintReceipt",
-      args: [activeBillId],
-      dataSuffix
-    });
-    await trackTransaction(hash, "Receipt mint submitted. Waiting for confirmation.");
-  }
-
-  async function handlePrimaryAction() {
-    try {
-      if (!isConnected) {
-        setStatus("Choose OKX Wallet, MetaMask, or Coinbase Wallet.");
-      } else if (!appReady) {
-        setStatus("Set NEXT_PUBLIC_CONTRACT_ADDRESS before sending transactions.");
-      } else if (canMint) {
-        await handleMintReceipt();
-      } else if (myShare > 0n && !hasPaid) {
-        await handlePayShare();
-      } else if (!hasPaid) {
-        await handleCreateBill();
-      }
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Transaction failed.");
+  function handlePrimaryAction() {
+    if (canMint) {
+      handleMintReceipt();
+    } else if (myShare > 0n && !hasPaid) {
+      handlePayShare();
+    } else if (!hasPaid) {
+      handleCreateBill();
     }
   }
 
@@ -281,7 +235,7 @@ export default function Home() {
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Metric label="My share" value={formatShare(myShare)} />
             <Metric label="Bill status" value={billStatus} />
-            <Metric label="Total confirmed" value={formatShare(paidAmount)} />
+            <Metric label="Total confirmed" value={`${formatShare(paidAmount)} / ${formatShare(totalAmount)}`} />
             <Metric label="Reward points" value={rewardPoints.toString()} />
           </div>
 
@@ -305,19 +259,19 @@ export default function Home() {
               <Receipt className="h-5 w-5 text-sky" />
               <div className="min-w-0">
                 <p className="truncate text-lg font-bold text-white">{currentTitle}</p>
-                <p className="text-sm text-white/50">Bill #{activeBillId.toString()}</p>
+                <p className="text-sm text-white/50">Bill #{activeBillId}</p>
               </div>
             </div>
-            <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.16em] text-white/45" htmlFor="billId">
-              Open bill ID
-            </label>
-            <input
-              id="billId"
-              value={activeBillId.toString()}
-              onChange={(event) => setActiveBillId(BigInt(event.target.value || "0"))}
-              className="mt-2 h-11 w-full rounded-lg border border-line bg-ink px-3 text-sm text-white"
-              inputMode="numeric"
-            />
+            <button
+              type="button"
+              onClick={() => {
+                persistBill(null);
+                setStatus("Draft ready.");
+              }}
+              className="mt-4 h-10 rounded-lg border border-line px-3 text-sm font-semibold text-white/75 transition hover:bg-white/8"
+            >
+              New Split
+            </button>
           </div>
         </div>
       </section>

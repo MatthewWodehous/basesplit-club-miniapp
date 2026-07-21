@@ -4,7 +4,7 @@ import { WagmiProvider } from "@/components/WagmiProvider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
-const baseAppId = process.env.NEXT_PUBLIC_BASE_APP_ID || "[base.dev Verify token]";
+const baseAppId = "6a5f3aa7078f6baf9ef30020";
 
 export const metadata: Metadata = {
   title: "BaseSplit Club",

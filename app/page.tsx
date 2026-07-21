@@ -153,11 +153,14 @@ export default function Home() {
   }, [address]);
 
   const billStatus = !localBill ? "Ready" : isSettled ? "Settled" : paidAmount > 0n ? "Collecting" : "Open";
+  const needsBalance = myShare > 0n && !hasPaid && myBalance < myShare;
 
   const primaryLabel = canMint
     ? "Mint Receipt"
     : myShare > 0n && !hasPaid
-      ? "Pay My Share"
+      ? needsBalance
+        ? "Add Balance"
+        : "Pay My Share"
       : hasPaid
         ? "Paid"
         : "Create Split";
@@ -251,6 +254,18 @@ export default function Home() {
     setStatus("Share paid from app balance and recorded.");
   }
 
+  function handleAddRequiredBalance() {
+    const amount = myShare > myBalance ? myShare - myBalance : parseAppAmount("1.00");
+    const nextBalances = {
+      ...balances,
+      [walletId]: (myBalance + amount).toString()
+    };
+
+    persistBalances(nextBalances);
+    recordTransfer(walletId, walletId, amount, "Added app balance");
+    setStatus("App balance added. You can pay your share now.");
+  }
+
   function handleMintReceipt() {
     if (!localBill || !canMint) return;
     const nextBill = { ...localBill, receiptMinted: true };
@@ -286,6 +301,8 @@ export default function Home() {
   function handlePrimaryAction() {
     if (canMint) {
       handleMintReceipt();
+    } else if (needsBalance) {
+      handleAddRequiredBalance();
     } else if (myShare > 0n && !hasPaid) {
       handlePayShare();
     } else if (!hasPaid) {

@@ -177,5 +177,5 @@ export const baseSplitClubAbi = [
   }
 ] as const;
 
-export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x5ac287bdB7B28ea6A1d549e5b447Dd7Df633CEca") as Address;
+export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0xC35EF98137855e8e7154fbd7c8C918b055eEd7a9") as Address;
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;

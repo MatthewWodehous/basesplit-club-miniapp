@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gift, Receipt, Split } from "lucide-react";
 import { concatHex, encodeFunctionData, formatUnits, isAddress, parseUnits, type Address } from "viem";
-import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useSendCalls, useSendTransaction, useWaitForCallsStatus, useWaitForTransactionReceipt } from "wagmi";
 import { WalletPanel } from "@/components/WalletPanel";
 import { baseSplitClubAbi, CONTRACT_ADDRESS, ZERO_ADDRESS } from "@/lib/contracts";
-import { dataSuffix } from "@/lib/wagmi";
+import { chainId, dataSuffix } from "@/lib/wagmi";
 
 const LOCAL_BILL_KEY = "basesplit.club.localBill";
 const LOCAL_POINTS_KEY = "basesplit.club.rewardPoints";
@@ -95,8 +95,26 @@ function sumParticipants(participants: LocalParticipant[], paidOnly = false) {
 export default function Home() {
   const { address, isConnected } = useAccount();
   const { data: transactionHash, isPending: isWriting, sendTransaction } = useSendTransaction();
+  const { data: callsResult, isPending: isSendingCalls, sendCalls } = useSendCalls({
+    mutation: {
+      onError() {
+        const callData = getCheckInCallData();
+        if (!callData) return;
+        sendTransaction({
+          to: CONTRACT_ADDRESS,
+          data: concatHex([callData, dataSuffix])
+        });
+      }
+    }
+  });
   const { isLoading: isConfirming, isSuccess: isRecordedOnchain } = useWaitForTransactionReceipt({
     hash: transactionHash
+  });
+  const { isLoading: isConfirmingCalls, isSuccess: areCallsRecorded } = useWaitForCallsStatus({
+    id: callsResult?.id,
+    query: {
+      enabled: Boolean(callsResult?.id)
+    }
   });
   const walletId = normalizeUserId(address || GUEST_WALLET);
   const [status, setStatus] = useState("");
@@ -119,9 +137,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!isRecordedOnchain || !transactionHash) return;
+    if ((!isRecordedOnchain || !transactionHash) && !areCallsRecorded) return;
     setStatus("Recorded on Base. Dashboard attribution can update after indexing.");
-  }, [isRecordedOnchain, transactionHash]);
+  }, [areCallsRecorded, isRecordedOnchain, transactionHash]);
 
   const referrer = useMemo(() => {
     if (typeof window === "undefined") return ZERO_ADDRESS;
@@ -155,10 +173,10 @@ export default function Home() {
   const billStatus = !localBill ? "Ready" : isSettled ? "Settled" : paidAmount > 0n ? "Collecting" : "Open";
   const needsBalance = myShare > 0n && !hasPaid && myBalance < myShare;
 
-  const shouldRecordOnBase = isConnected && !transactionHash;
-  const primaryLabel = isWriting
+  const shouldRecordOnBase = isConnected && !transactionHash && !callsResult?.id;
+  const primaryLabel = isWriting || isSendingCalls
     ? "Open Wallet"
-    : isConfirming
+    : isConfirming || isConfirmingCalls
       ? "Recording"
       : shouldRecordOnBase
         ? "Record on Base"
@@ -242,15 +260,31 @@ export default function Home() {
       return;
     }
 
-    const callData = encodeFunctionData({
+    const callData = getCheckInCallData();
+    if (!callData) return;
+
+    sendCalls({
+      calls: [
+        {
+          to: CONTRACT_ADDRESS,
+          data: callData
+        }
+      ],
+      capabilities: {
+        dataSuffix: { value: dataSuffix }
+      },
+      chainId,
+      experimental_fallback: true
+    });
+  }
+
+  function getCheckInCallData() {
+    if (!address) return undefined;
+
+    return encodeFunctionData({
       abi: baseSplitClubAbi,
       functionName: "createBill",
       args: [`${title || "BaseSplit Club"} check-in`, [address], [parseAppAmount("1.00")]]
-    });
-
-    sendTransaction({
-      to: CONTRACT_ADDRESS,
-      data: concatHex([callData, dataSuffix])
     });
   }
 
@@ -313,7 +347,7 @@ export default function Home() {
   }
 
   function handlePrimaryAction() {
-    if (primaryDone || isWriting || isConfirming) {
+    if (primaryDone || isWriting || isSendingCalls || isConfirming || isConfirmingCalls) {
       return;
     }
 

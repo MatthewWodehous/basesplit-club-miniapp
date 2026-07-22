@@ -1,0 +1,18 @@
+{
+  "miniapp": {
+    "version": "1",
+    "name": "BaseSplit Club",
+    "iconUrl": "https://basesplit-club-miniapp.vercel.app/icon.svg",
+    "homeUrl": "https://basesplit-club-miniapp.vercel.app",
+    "imageUrl": "https://basesplit-club-miniapp.vercel.app/og.svg",
+    "buttonTitle": "Open BaseSplit",
+    "splashImageUrl": "https://basesplit-club-miniapp.vercel.app/icon.svg",
+    "splashBackgroundColor": "#07110F",
+    "webhookUrl": "https://basesplit-club-miniapp.vercel.app/api/webhook"
+  },
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  }
+}

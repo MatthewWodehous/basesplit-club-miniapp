@@ -1,0 +1,11 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#07110F"/>
+  <rect x="72" y="72" width="1056" height="486" rx="28" fill="#101B18" stroke="#263833" stroke-width="2"/>
+  <circle cx="214" cy="210" r="82" fill="#9BFFB7"/>
+  <path d="M174 182H254V205H174V182Z" fill="#07110F"/>
+  <path d="M174 225H254V248H174V225Z" fill="#07110F"/>
+  <text x="340" y="215" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="72" font-weight="800">BaseSplit Club</text>
+  <text x="340" y="288" fill="#B6C8C0" font-family="Arial, Helvetica, sans-serif" font-size="34">Split bills. Settle on Base. Keep the memory.</text>
+  <rect x="340" y="348" width="238" height="66" rx="14" fill="#9BFFB7"/>
+  <text x="380" y="391" fill="#07110F" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800">Record on Base</text>
+</svg>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Gift, Receipt, Split } from "lucide-react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import { useAccount } from "wagmi";
+import { WalletPanel } from "@/components/WalletPanel";
 import { ZERO_ADDRESS } from "@/lib/contracts";
 
 const LOCAL_BILL_KEY = "basesplit.club.localBill";
@@ -332,6 +333,7 @@ export default function Home() {
         </div>
 
         <div className="grid gap-4">
+          <WalletPanel />
           <div className="rounded-lg border border-line bg-panel/70 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-white/45">Current bill</p>
             <div className="mt-3 flex items-center gap-3">

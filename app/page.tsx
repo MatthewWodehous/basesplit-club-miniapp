@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gift, Receipt, Split } from "lucide-react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { WalletPanel } from "@/components/WalletPanel";
-import { ZERO_ADDRESS } from "@/lib/contracts";
+import { baseSplitClubAbi, CONTRACT_ADDRESS, ZERO_ADDRESS } from "@/lib/contracts";
 
 const LOCAL_BILL_KEY = "basesplit.club.localBill";
 const LOCAL_POINTS_KEY = "basesplit.club.rewardPoints";
@@ -92,7 +92,11 @@ function sumParticipants(participants: LocalParticipant[], paidOnly = false) {
 }
 
 export default function Home() {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
+  const { data: transactionHash, isPending: isWriting, writeContract } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isRecordedOnchain } = useWaitForTransactionReceipt({
+    hash: transactionHash
+  });
   const walletId = normalizeUserId(address || GUEST_WALLET);
   const [status, setStatus] = useState("");
   const [title, setTitle] = useState("Weekend dinner in SoHo");
@@ -112,6 +116,11 @@ export default function Home() {
     setBalances(readJson<Record<string, string>>(LOCAL_BALANCES_KEY, {}));
     setTransfers(readJson<TransferRecord[]>(LOCAL_TRANSFERS_KEY, []));
   }, []);
+
+  useEffect(() => {
+    if (!isRecordedOnchain || !transactionHash) return;
+    setStatus("Recorded on Base. Dashboard attribution can update after indexing.");
+  }, [isRecordedOnchain, transactionHash]);
 
   const referrer = useMemo(() => {
     if (typeof window === "undefined") return ZERO_ADDRESS;
@@ -145,7 +154,14 @@ export default function Home() {
   const billStatus = !localBill ? "Ready" : isSettled ? "Settled" : paidAmount > 0n ? "Collecting" : "Open";
   const needsBalance = myShare > 0n && !hasPaid && myBalance < myShare;
 
-  const primaryLabel = canMint
+  const shouldRecordOnBase = isConnected && !transactionHash;
+  const primaryLabel = isWriting
+    ? "Open Wallet"
+    : isConfirming
+      ? "Recording"
+      : shouldRecordOnBase
+        ? "Record on Base"
+      : canMint
     ? "Mint Receipt"
     : myShare > 0n && !hasPaid
       ? needsBalance
@@ -196,7 +212,7 @@ export default function Home() {
     persistTransfers(nextTransfers);
   }
 
-  function handleCreateBill() {
+  function createLocalBill() {
     const validRows = participants.filter((row) => normalizeUserId(row.address) && Number(row.amount) > 0);
     const rows = validRows.length > 0 ? validRows : [{ address: walletId, amount: "1.00" }];
 
@@ -215,6 +231,22 @@ export default function Home() {
     persistBill(nextBill);
     addPoints(10);
     setStatus("Split saved. First reward unlocked.");
+  }
+
+  function handleCreateBill() {
+    createLocalBill();
+
+    if (!isConnected || !address) {
+      setStatus("Split saved locally. Connect a wallet to record it on Base.");
+      return;
+    }
+
+    writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: baseSplitClubAbi,
+      functionName: "createBill",
+      args: [`${title || "BaseSplit Club"} check-in`, [address], [parseAppAmount("1.00")]]
+    });
   }
 
   function handlePayShare() {
@@ -276,11 +308,13 @@ export default function Home() {
   }
 
   function handlePrimaryAction() {
-    if (primaryDone) {
+    if (primaryDone || isWriting || isConfirming) {
       return;
     }
 
-    if (canMint) {
+    if (shouldRecordOnBase) {
+      handleCreateBill();
+    } else if (canMint) {
       handleMintReceipt();
     } else if (needsBalance) {
       handleAddRequiredBalance();

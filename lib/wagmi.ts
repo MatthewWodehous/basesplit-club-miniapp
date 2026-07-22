@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createConfig, http } from "wagmi";
 import { base } from "wagmi/chains";
 import { coinbaseWallet, injected } from "wagmi/connectors";
+import { Attribution } from "ox/erc8021";
 import type { Address, Hex } from "viem";
 
 type WalletProvider = {
@@ -18,14 +19,17 @@ type WalletWindow = Window & {
   okxwallet?: WalletProvider;
 };
 
-export const dataSuffix = ((process.env.NEXT_PUBLIC_DATA_SUFFIX || "0x") as Hex);
 export const builderCode = process.env.NEXT_PUBLIC_BUILDER_CODE || "bc_1qw80tpu";
+export const dataSuffix = (process.env.NEXT_PUBLIC_DATA_SUFFIX && process.env.NEXT_PUBLIC_DATA_SUFFIX !== "[Encoded String]"
+  ? process.env.NEXT_PUBLIC_DATA_SUFFIX
+  : Attribution.toDataSuffix({ codes: [builderCode] })) as Hex;
 export const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || base.id);
 
 export const queryClient = new QueryClient();
 
 export const wagmiConfig = createConfig({
   chains: [base],
+  dataSuffix,
   connectors: [
     injected({
       target() {

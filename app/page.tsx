@@ -153,6 +153,7 @@ export default function Home() {
       : hasPaid
         ? "Paid"
         : "Create Split";
+  const primaryDone = hasPaid && !canMint;
 
   function persistBill(nextBill: LocalBill | null) {
     setLocalBill(nextBill);
@@ -274,6 +275,10 @@ export default function Home() {
   }
 
   function handlePrimaryAction() {
+    if (primaryDone) {
+      return;
+    }
+
     if (canMint) {
       handleMintReceipt();
     } else if (needsBalance) {
@@ -313,8 +318,12 @@ export default function Home() {
           <button
             type="button"
             onClick={handlePrimaryAction}
-            disabled={hasPaid && !canMint}
-            className="mt-6 flex h-14 w-full items-center justify-center rounded-lg bg-mint px-5 text-base font-black text-ink transition hover:bg-white disabled:cursor-not-allowed disabled:bg-white/18 disabled:text-white/45"
+            aria-disabled={primaryDone}
+            className={`mt-6 flex h-14 w-full items-center justify-center rounded-lg px-5 text-base font-black transition ${
+              primaryDone
+                ? "cursor-default border border-line bg-ink text-white/70"
+                : "bg-mint text-ink hover:bg-white"
+            }`}
           >
             {primaryLabel}
           </button>

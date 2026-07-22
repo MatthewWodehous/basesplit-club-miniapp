@@ -59,7 +59,7 @@ export const wagmiConfig = createConfig({
     }),
     coinbaseWallet({
       appName: "BaseSplit Club",
-      preference: "smartWalletOnly"
+      preference: "all"
     })
   ],
   multiInjectedProviderDiscovery: false,

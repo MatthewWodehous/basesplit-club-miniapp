@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Gift, Receipt, Split } from "lucide-react";
-import { formatUnits, isAddress, parseUnits, type Address } from "viem";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { concatHex, encodeFunctionData, formatUnits, isAddress, parseUnits, type Address } from "viem";
+import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { WalletPanel } from "@/components/WalletPanel";
 import { baseSplitClubAbi, CONTRACT_ADDRESS, ZERO_ADDRESS } from "@/lib/contracts";
+import { dataSuffix } from "@/lib/wagmi";
 
 const LOCAL_BILL_KEY = "basesplit.club.localBill";
 const LOCAL_POINTS_KEY = "basesplit.club.rewardPoints";
@@ -93,7 +94,7 @@ function sumParticipants(participants: LocalParticipant[], paidOnly = false) {
 
 export default function Home() {
   const { address, isConnected } = useAccount();
-  const { data: transactionHash, isPending: isWriting, writeContract } = useWriteContract();
+  const { data: transactionHash, isPending: isWriting, sendTransaction } = useSendTransaction();
   const { isLoading: isConfirming, isSuccess: isRecordedOnchain } = useWaitForTransactionReceipt({
     hash: transactionHash
   });
@@ -241,11 +242,15 @@ export default function Home() {
       return;
     }
 
-    writeContract({
-      address: CONTRACT_ADDRESS,
+    const callData = encodeFunctionData({
       abi: baseSplitClubAbi,
       functionName: "createBill",
       args: [`${title || "BaseSplit Club"} check-in`, [address], [parseAppAmount("1.00")]]
+    });
+
+    sendTransaction({
+      to: CONTRACT_ADDRESS,
+      data: concatHex([callData, dataSuffix])
     });
   }
 

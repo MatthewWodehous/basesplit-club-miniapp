@@ -19,7 +19,7 @@ type WalletWindow = Window & {
 };
 
 export const dataSuffix = ((process.env.NEXT_PUBLIC_DATA_SUFFIX || "0x") as Hex);
-export const builderCode = process.env.NEXT_PUBLIC_BUILDER_CODE || "";
+export const builderCode = process.env.NEXT_PUBLIC_BUILDER_CODE || "bc_1qw80tpu";
 export const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || base.id);
 
 export const queryClient = new QueryClient();

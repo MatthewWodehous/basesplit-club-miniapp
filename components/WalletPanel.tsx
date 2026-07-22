@@ -4,7 +4,7 @@ import { Check, LogOut, Wallet } from "lucide-react";
 import type { Connector } from "wagmi";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 
-const walletNames = ["OKX Wallet", "MetaMask", "Coinbase Wallet"];
+const walletNames = ["OKX Wallet", "MetaMask", "Base Account"];
 
 function compactAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;

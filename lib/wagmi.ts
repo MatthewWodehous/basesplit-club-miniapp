@@ -3,7 +3,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createConfig, http } from "wagmi";
 import { base } from "wagmi/chains";
-import { coinbaseWallet, injected } from "wagmi/connectors";
+import { baseAccount, injected } from "wagmi/connectors";
 import { Attribution } from "ox/erc8021";
 import type { Address, Hex } from "viem";
 
@@ -57,9 +57,9 @@ export const wagmiConfig = createConfig({
         };
       }
     }),
-    coinbaseWallet({
+    baseAccount({
       appName: "BaseSplit Club",
-      preference: "all"
+      preference: { options: "all" }
     })
   ],
   multiInjectedProviderDiscovery: false,

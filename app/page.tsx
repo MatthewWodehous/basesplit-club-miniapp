@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Gift, Receipt, Send, Split, Users } from "lucide-react";
+import { Gift, Receipt, Split } from "lucide-react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import { useAccount } from "wagmi";
-import { WalletPanel } from "@/components/WalletPanel";
 import { ZERO_ADDRESS } from "@/lib/contracts";
 
 const LOCAL_BILL_KEY = "basesplit.club.localBill";
@@ -105,10 +104,6 @@ export default function Home() {
   const [receiptBalance, setReceiptBalance] = useState(0);
   const [balances, setBalances] = useState<Record<string, string>>({});
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
-  const [transferTo, setTransferTo] = useState(GUEST_WALLET);
-  const [transferAmount, setTransferAmount] = useState("25.00");
-  const [transferNote, setTransferNote] = useState("Add app balance");
-
   useEffect(() => {
     setLocalBill(readJson<LocalBill | null>(LOCAL_BILL_KEY, null));
     setRewardPoints(readStoredNumber(LOCAL_POINTS_KEY));
@@ -116,12 +111,6 @@ export default function Home() {
     setBalances(readJson<Record<string, string>>(LOCAL_BALANCES_KEY, {}));
     setTransfers(readJson<TransferRecord[]>(LOCAL_TRANSFERS_KEY, []));
   }, []);
-
-  useEffect(() => {
-    if (address) {
-      setTransferTo(address);
-    }
-  }, [address]);
 
   const referrer = useMemo(() => {
     if (typeof window === "undefined") return ZERO_ADDRESS;
@@ -146,11 +135,11 @@ export default function Home() {
   const receiptMinted = Boolean(localBill?.receiptMinted);
 
   const referralLink = useMemo(() => {
-    if (typeof window === "undefined" || !address) return "";
+    if (typeof window === "undefined") return "";
     const url = new URL(window.location.href);
-    url.searchParams.set("ref", address);
+    url.searchParams.set("ref", address || walletId);
     return url.toString();
-  }, [address]);
+  }, [address, walletId]);
 
   const billStatus = !localBill ? "Ready" : isSettled ? "Settled" : paidAmount > 0n ? "Collecting" : "Open";
   const needsBalance = myShare > 0n && !hasPaid && myBalance < myShare;
@@ -222,7 +211,8 @@ export default function Home() {
     };
 
     persistBill(nextBill);
-    setStatus("Split saved. Add app balance before paying.");
+    addPoints(10);
+    setStatus("Split saved. First reward unlocked.");
   }
 
   function handlePayShare() {
@@ -267,6 +257,7 @@ export default function Home() {
 
     persistBalances(nextBalances);
     recordTransfer(walletId, walletId, amount, "Added app balance");
+    addPoints(5);
     setStatus("App balance added. You can pay your share now.");
   }
 
@@ -282,26 +273,6 @@ export default function Home() {
     setStatus("Receipt added to your local collection.");
   }
 
-  function handleTransfer() {
-    const to = normalizeUserId(transferTo);
-    const amount = parseAppAmount(transferAmount);
-
-    if (!to || amount <= 0n) {
-      setStatus("Enter a recipient and transfer amount.");
-      return;
-    }
-
-    const currentRecipientBalance = BigInt(balances[to] || "0");
-    const nextBalances = {
-      ...balances,
-      [to]: (currentRecipientBalance + amount).toString()
-    };
-
-    persistBalances(nextBalances);
-    recordTransfer(walletId, to, amount, transferNote || "App balance transfer");
-    setStatus(to === walletId ? "Self transfer recorded and balance added." : "Transfer recorded.");
-  }
-
   function handlePrimaryAction() {
     if (canMint) {
       handleMintReceipt();
@@ -315,8 +286,8 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 pb-24 pt-5 sm:px-6 lg:px-8">
-      <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+    <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 pb-8 pt-5 sm:px-6 lg:px-8">
+      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-lg border border-line bg-panel/75 p-4 shadow-glow sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -352,7 +323,6 @@ export default function Home() {
         </div>
 
         <div className="grid gap-4">
-          <WalletPanel />
           <div className="rounded-lg border border-line bg-panel/70 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-white/45">Current bill</p>
             <div className="mt-3 flex items-center gap-3">
@@ -362,26 +332,14 @@ export default function Home() {
                 <p className="text-sm text-white/50">Bill #{activeBillId}</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                persistBill(null);
-                setStatus("Draft ready.");
-              }}
-              className="mt-4 h-10 rounded-lg border border-line px-3 text-sm font-semibold text-white/75 transition hover:bg-white/8"
-            >
-              New Split
-            </button>
+            <p className="mt-4 text-sm text-white/50">Wallet: {compactAddress(address || GUEST_WALLET)}</p>
           </div>
         </div>
       </section>
 
       <section className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="rounded-lg border border-line bg-panel/70 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-white">Create Split</h2>
-            <Users className="h-5 w-5 text-white/45" />
-          </div>
+          <h2 className="text-base font-bold text-white">Create Split</h2>
           <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.16em] text-white/45" htmlFor="title">
             Bill title
           </label>
@@ -419,81 +377,16 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setParticipants([...participants, { address: "", amount: "0.00" }])}
-            className="mt-3 h-10 rounded-lg border border-line px-3 text-sm font-semibold text-white/75 transition hover:bg-white/8"
-          >
-            Add participant
-          </button>
         </div>
 
         <div className="grid gap-4">
           <div className="rounded-lg border border-line bg-panel/70 p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-white">Transfer</h2>
-              <Send className="h-5 w-5 text-mint" />
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_7rem]">
-              <input
-                aria-label="Transfer recipient"
-                value={transferTo}
-                onChange={(event) => setTransferTo(event.target.value)}
-                placeholder="address or nickname"
-                className="h-11 min-w-0 rounded-lg border border-line bg-ink px-3 text-sm text-white placeholder:text-white/25"
-              />
-              <input
-                aria-label="Transfer amount"
-                value={transferAmount}
-                onChange={(event) => setTransferAmount(event.target.value)}
-                className="h-11 rounded-lg border border-line bg-ink px-3 text-sm text-white"
-                inputMode="decimal"
-              />
-            </div>
-            <input
-              aria-label="Transfer note"
-              value={transferNote}
-              onChange={(event) => setTransferNote(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-line bg-ink px-3 text-sm text-white"
-            />
-            <button
-              type="button"
-              onClick={handleTransfer}
-              className="mt-3 h-10 rounded-lg border border-line px-3 text-sm font-semibold text-white/75 transition hover:bg-white/8"
+            <h2 className="text-base font-bold text-white">Invite</h2>
+            <p
+              onClick={() => referralLink && navigator.clipboard.writeText(referralLink)}
+              className="mt-3 break-all rounded-lg border border-line bg-ink p-3 text-sm text-white/60"
             >
-              Record Transfer
-            </button>
-            <div className="mt-3 grid gap-2">
-              {transfers.length === 0 ? (
-                <p className="rounded-lg border border-line bg-ink p-3 text-sm text-white/45">No transfers yet.</p>
-              ) : (
-                transfers.slice(0, 3).map((transfer) => (
-                  <div key={transfer.id} className="rounded-lg border border-line bg-ink p-3 text-sm text-white/60">
-                    <p className="font-semibold text-white">{formatShare(BigInt(transfer.amount))}</p>
-                    <p className="break-all text-xs text-white/45">
-                      {compactAddress(transfer.from)} to {compactAddress(transfer.to)}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-line bg-panel/70 p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-white">Invite</h2>
-              <button
-                type="button"
-                onClick={() => referralLink && navigator.clipboard.writeText(referralLink)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-white/70 transition hover:bg-white/8"
-                aria-label="Copy referral link"
-                title="Copy referral link"
-              >
-                <Copy className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="mt-3 break-all rounded-lg border border-line bg-ink p-3 text-sm text-white/60">
-              {referralLink || "Connect a wallet to generate your referral link."}
+              {referralLink}
             </p>
             <p className="mt-3 text-sm text-white/50">Referral source: {referrer === ZERO_ADDRESS ? "None" : compactAddress(referrer)}</p>
           </div>
@@ -509,18 +402,25 @@ export default function Home() {
               <Metric label="Wallet" value={compactAddress(address || GUEST_WALLET)} />
             </div>
           </div>
+          <div className="rounded-lg border border-line bg-panel/70 p-4">
+            <h2 className="text-base font-bold text-white">Rewards</h2>
+            <div className="mt-3 grid gap-2">
+              {transfers.length === 0 ? (
+                <p className="rounded-lg border border-line bg-ink p-3 text-sm text-white/45">Your first action unlocks points instantly.</p>
+              ) : (
+                transfers.slice(0, 3).map((transfer) => (
+                  <div key={transfer.id} className="rounded-lg border border-line bg-ink p-3 text-sm text-white/60">
+                    <p className="font-semibold text-white">{formatShare(BigInt(transfer.amount))}</p>
+                    <p className="break-all text-xs text-white/45">
+                      {compactAddress(transfer.from)} to {compactAddress(transfer.to)}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </section>
-
-      <nav className="fixed inset-x-0 bottom-0 border-t border-line bg-ink/92 px-4 py-3 backdrop-blur">
-        <div className="mx-auto grid max-w-md grid-cols-3 gap-2">
-          {["Split", "Rewards", "Invite"].map((item) => (
-            <button key={item} type="button" className="h-10 rounded-lg text-sm font-bold text-white/70 transition hover:bg-white/8">
-              {item}
-            </button>
-          ))}
-        </div>
-      </nav>
     </main>
   );
 }

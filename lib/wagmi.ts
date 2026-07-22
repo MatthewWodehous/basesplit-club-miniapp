@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient } from "@tanstack/react-query";
-import { createConfig, http } from "wagmi";
+import { createConfig, createStorage, cookieStorage, http } from "wagmi";
 import { base } from "wagmi/chains";
 import { baseAccount, injected } from "wagmi/connectors";
 import { Attribution } from "ox/erc8021";
@@ -64,6 +64,7 @@ export const wagmiConfig = createConfig({
   ],
   multiInjectedProviderDiscovery: false,
   ssr: true,
+  storage: createStorage({ storage: cookieStorage }),
   transports: {
     [base.id]: http()
   }
